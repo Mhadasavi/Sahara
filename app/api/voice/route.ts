@@ -3,6 +3,48 @@ import { SAHARA_VOICE_PROFILES, SupportedLang, VoiceGender } from "@/lib/voice-c
 
 const GOOGLE_TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
+const EDGE_VOICE_MAP: Record<SupportedLang, Record<VoiceGender, string>> = {
+  hi: {
+    male: "hi-IN-MadhurNeural",
+    female: "hi-IN-SwaraNeural",
+  },
+  hinglish: {
+    male: "en-IN-PrabhatNeural",
+    female: "en-IN-NeerjaNeural",
+  },
+  en: {
+    male: "en-IN-PrabhatNeural",
+    female: "en-IN-NeerjaNeural",
+  },
+};
+
+async function synthesizeWithEdge(text: string, voiceName: string): Promise<string> {
+  const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
+  const tts = new MsEdgeTTS();
+  await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+  const { audioStream } = tts.toStream(text, { rate: -10 }); // 10% slower cadence for senior clarity
+  
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
+    audioStream.on("end", () => {
+      const fullBuffer = Buffer.concat(chunks);
+      resolve(fullBuffer.toString("base64"));
+    });
+    audioStream.on("error", (err: any) => reject(err));
+  });
+}
+
+function cleanTextForSpeech(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, "")
+    .replace(/[🛡⚡🚆📝✅❌🟢🟡🔴⚠️🙏👋📌📞🔍]/g, "")
+    .replace(/^[\s\-–—:.,]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -12,74 +54,58 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Text string is required for speech synthesis." }, { status: 400 });
     }
 
-    // Protect token bandwidth: Truncate spoken narrative to 800 characters
-    const sanitizedText = text.trim().substring(0, 800);
-
-    const apiKey = process.env.GOOGLE_CLOUD_TTS_API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "Missing Google Cloud Text-to-Speech API key configuration. Falling back to browser speech." },
-        { status: 503 }
-      );
-    }
-
+    // Strip visual emojis (like 📝 which TTS reads as "Memo") and truncate to 800 chars
+    const sanitizedText = cleanTextForSpeech(text).substring(0, 800);
     const targetLang: SupportedLang = ["hi", "en", "hinglish"].includes(language) ? language : "hi";
     const targetGender: VoiceGender = gender === "male" ? "male" : "female";
-    const selectedVoice = SAHARA_VOICE_PROFILES[targetLang][targetGender];
 
-    // Payload configuration for Google Cloud TTS API
-    const requestPayload = {
-      input: { text: sanitizedText },
-      voice: {
-        languageCode: selectedVoice.languageCode,
-        name: selectedVoice.name,
-        ssmlGender: selectedVoice.ssmlGender,
-      },
-      audioConfig: {
-        audioEncoding: "MP3",
-        speakingRate: 0.9, // Slightly slower cadence tailored for elderly listeners
-        pitch: 0.0,
-      },
-    };
+    const apiKey = process.env.GOOGLE_CLOUD_TTS_API_KEY || process.env.GEMINI_API_KEY;
 
-    const ttsResponse = await fetch(`${GOOGLE_TTS_ENDPOINT}?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestPayload),
-    });
+    // 1. If Google Cloud API Key is explicitly provided, attempt Google Cloud TTS
+    if (apiKey) {
+      try {
+        const selectedVoice = SAHARA_VOICE_PROFILES[targetLang][targetGender];
+        const requestPayload = {
+          input: { text: sanitizedText },
+          voice: {
+            languageCode: selectedVoice.languageCode,
+            name: selectedVoice.name,
+            ssmlGender: selectedVoice.ssmlGender,
+          },
+          audioConfig: {
+            audioEncoding: "MP3",
+            speakingRate: 0.9,
+            pitch: targetGender === "male" ? -2.0 : 0.0,
+          },
+        };
 
-    if (!ttsResponse.ok) {
-      const errDetails = await ttsResponse.text();
-      console.warn("Chirp 3 HD failed or returned error, attempting fallback to Neural2...", errDetails);
+        const ttsResponse = await fetch(`${GOOGLE_TTS_ENDPOINT}?key=${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestPayload),
+        });
 
-      // Graceful fallback to Neural2 if Chirp 3 HD quota or access is restricted
-      const fallbackPayload = {
-        input: { text: sanitizedText },
-        voice: {
-          languageCode: targetLang === "hi" ? "hi-IN" : "en-IN",
-          name: targetLang === "hi" ? "hi-IN-Neural2-A" : "en-IN-Neural2-A",
-        },
-        audioConfig: { audioEncoding: "MP3", speakingRate: 0.9 },
-      };
-
-      const fallbackRes = await fetch(`${GOOGLE_TTS_ENDPOINT}?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fallbackPayload),
-      });
-
-      if (!fallbackRes.ok) {
-        throw new Error(`Google Cloud TTS failed: ${await fallbackRes.text()}`);
+        if (ttsResponse.ok) {
+          const ttsData = await ttsResponse.json();
+          if (ttsData.audioContent) {
+            return NextResponse.json({
+              audioContent: ttsData.audioContent,
+              voiceUsed: selectedVoice.name,
+            });
+          }
+        }
+      } catch (cloudErr) {
+        console.warn("Google Cloud TTS failed, falling back to natural neural voice engine...", cloudErr);
       }
-
-      const fallbackData = await fallbackRes.json();
-      return NextResponse.json({ audioContent: fallbackData.audioContent, voiceUsed: "Neural2 Fallback" });
     }
 
-    const ttsData = await ttsResponse.json();
+    // 2. High-Fidelity Natural Voice Engine (Madhur for Indian Hindi Male, Swara for Hindi Female)
+    const edgeVoice = EDGE_VOICE_MAP[targetLang][targetGender];
+    const base64Audio = await synthesizeWithEdge(sanitizedText, edgeVoice);
+
     return NextResponse.json({
-      audioContent: ttsData.audioContent, // Base64 MP3 payload
-      voiceUsed: selectedVoice.name,
+      audioContent: base64Audio,
+      voiceUsed: edgeVoice,
     });
   } catch (error: any) {
     console.error("Voice Generation Route Error:", error);

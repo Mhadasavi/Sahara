@@ -19,10 +19,16 @@ export interface AnalysisOutput {
   what_not_to_do: string[];
   task_steps: TaskStep[];
   family_share_text: string;
+  extracted_message?: string;
 }
 
 export interface FeedItem {
   id: string;
   timestamp: string;
   analysis: AnalysisOutput;
+  sourceContent?: string;
+  imageBase64?: string | null;
+  imageMimeType?: string | null;
+  taskIntent?: string;
 }
+

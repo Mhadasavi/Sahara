@@ -63,10 +63,7 @@ npm run build
 
 ---
 
-## 📋 Evaluation & Demo Guide
-See [`DEMO_PROMPTS_GUIDE.txt`](./DEMO_PROMPTS_GUIDE.txt) for ready-to-copy prompts testing:
-1. Urgent Electricity Disconnection Scam
-2. Bank KYC Expiry with Sensitive OTP (PII masking demonstration)
-3. Hindi Power Notice (Chirp 3 HD voice narration)
-4. Safe IRCTC Railway Booking
-5. Hinglish Pension / Life Certificate Scam
+## 📋 Evaluation & Demo Guides
+- 📖 [**Task Intents & Testing Guide (TASK_INTENTS_AND_TESTING_GUIDE.md)**](./TASK_INTENTS_AND_TESTING_GUIDE.md): Deep-dive into all 4 task functions with test prompts in English, Hindi, and Hinglish.
+- ⚡ [**Demo Prompts Guide (DEMO_PROMPTS_GUIDE.txt)**](./DEMO_PROMPTS_GUIDE.txt): Quick raw copy-paste prompts for judge evaluations.
+

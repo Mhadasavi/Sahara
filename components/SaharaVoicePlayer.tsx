@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Volume2, VolumeX, Loader2 } from "lucide-react";
 import { audioManager } from "@/lib/audio-client";
 import { SupportedLang, VoiceGender } from "@/lib/voice-config";
@@ -15,6 +15,13 @@ export default function SaharaVoicePlayer({ textToSpeak, language }: VoicePlayer
   const [isLoading, setIsLoading] = useState(false);
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
 
+  // When unmounting or when language/text changes, stop any ongoing audio
+  useEffect(() => {
+    return () => {
+      audioManager.stop();
+    };
+  }, [language, textToSpeak]);
+
   const handleTogglePlay = () => {
     if (isPlaying) {
       audioManager.stop();
@@ -27,13 +34,25 @@ export default function SaharaVoicePlayer({ textToSpeak, language }: VoicePlayer
     }
   };
 
+  const handleGenderChange = (newGender: VoiceGender) => {
+    if (voiceGender === newGender) return;
+    setVoiceGender(newGender);
+    if (isPlaying) {
+      audioManager.stop();
+      audioManager.playNaturalVoice(textToSpeak, language, newGender, (playing, loading) => {
+        setIsPlaying(playing);
+        setIsLoading(loading);
+      });
+    }
+  };
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       {/* Primary Listen Action */}
       <button
         onClick={handleTogglePlay}
         disabled={isLoading || !textToSpeak.trim()}
-        aria-label={isPlaying ? "Stop Voice Narration" : "Listen in natural voice"}
+        aria-label={isPlaying ? "Stop Voice Narration" : `Listen in natural ${voiceGender} voice`}
         className={`min-h-[52px] px-5 py-3 rounded-2xl font-bold flex items-center gap-2 border-2 transition shadow-sm ${
           isPlaying
             ? "bg-amber-600 text-white border-amber-700 animate-pulse"
@@ -53,35 +72,39 @@ export default function SaharaVoicePlayer({ textToSpeak, language }: VoicePlayer
         ) : (
           <>
             <Volume2 className="w-6 h-6" />
-            <span>{language === "hi" ? "सुनें (Listen)" : "Listen"}</span>
+            <span>
+              {language === "hi"
+                ? `सुनें (${voiceGender === "female" ? "दीदी" : "भैया"})`
+                : `Listen (${voiceGender === "female" ? "Didi" : "Bhaiya"})`}
+            </span>
           </>
         )}
       </button>
 
       {/* Voice Gender Toggle */}
-      <div className="flex bg-slate-100 rounded-xl p-1 border border-slate-300" role="group" aria-label="Voice Selection">
+      <div
+        className="flex bg-slate-100 rounded-xl p-1 border border-slate-300"
+        role="group"
+        aria-label="Voice Selection"
+      >
         <button
           type="button"
-          onClick={() => {
-            audioManager.stop();
-            setIsPlaying(false);
-            setVoiceGender("female");
-          }}
-          className={`px-3 py-2 text-sm font-bold rounded-lg transition ${
-            voiceGender === "female" ? "bg-white text-blue-900 shadow-sm" : "text-slate-600 hover:bg-slate-200"
+          onClick={() => handleGenderChange("female")}
+          className={`min-h-[44px] px-3.5 py-2 text-sm font-bold rounded-lg transition ${
+            voiceGender === "female"
+              ? "bg-white text-blue-900 shadow-sm border border-slate-200"
+              : "text-slate-600 hover:bg-slate-200"
           }`}
         >
           👩 Didi / Female
         </button>
         <button
           type="button"
-          onClick={() => {
-            audioManager.stop();
-            setIsPlaying(false);
-            setVoiceGender("male");
-          }}
-          className={`px-3 py-2 text-sm font-bold rounded-lg transition ${
-            voiceGender === "male" ? "bg-white text-blue-900 shadow-sm" : "text-slate-600 hover:bg-slate-200"
+          onClick={() => handleGenderChange("male")}
+          className={`min-h-[44px] px-3.5 py-2 text-sm font-bold rounded-lg transition ${
+            voiceGender === "male"
+              ? "bg-white text-blue-900 shadow-sm border border-slate-200"
+              : "text-slate-600 hover:bg-slate-200"
           }`}
         >
           👨 Bhaiya / Male

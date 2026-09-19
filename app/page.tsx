@@ -15,6 +15,7 @@ import {
   Image as ImageIcon,
   Send,
   Trash2,
+  MessageCircle,
 } from "lucide-react";
 import { TextSize, Language, AnalysisOutput, FeedItem } from "@/lib/types";
 import { audioManager } from "@/lib/audio-client";
@@ -33,6 +34,12 @@ export default function SaharaLiveApp() {
   const [taskIntent, setTaskIntent] = useState<string>("general");
   const [isLoading, setIsLoading] = useState(false);
   const [activeAnalysis, setActiveAnalysis] = useState<AnalysisOutput | null>(null);
+  const [activePayload, setActivePayload] = useState<{
+    content: string;
+    imageBase64: string | null;
+    imageMimeType: string | null;
+    taskIntent: string;
+  } | null>(null);
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
@@ -86,16 +93,24 @@ export default function SaharaLiveApp() {
     setIsLoading(true);
     setWarnings([]);
 
+    const payload = {
+      content: inputContent,
+      imageBase64: selectedImage?.base64 || null,
+      imageMimeType: selectedImage?.mimeType || null,
+      taskIntent,
+    };
+    setActivePayload(payload);
+
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: inputContent,
-          imageBase64: selectedImage?.base64 || null,
-          imageMimeType: selectedImage?.mimeType || null,
+          content: payload.content,
+          imageBase64: payload.imageBase64,
+          imageMimeType: payload.imageMimeType,
           language,
-          taskIntent,
+          taskIntent: payload.taskIntent,
         }),
       });
 
@@ -115,6 +130,10 @@ export default function SaharaLiveApp() {
         id: Date.now().toString(),
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         analysis: output,
+        sourceContent: payload.content,
+        imageBase64: payload.imageBase64,
+        imageMimeType: payload.imageMimeType,
+        taskIntent: payload.taskIntent,
       };
 
       const updatedFeed = [newItem, ...feedItems];
@@ -132,9 +151,70 @@ export default function SaharaLiveApp() {
     }
   };
 
+  const handleLanguageChange = async (newLang: Language) => {
+    if (language === newLang) return;
+    setLanguage(newLang);
+    audioManager.stop();
+
+    // If an analysis is currently open, dynamically re-analyze in the newly selected language!
+    if (activeAnalysis) {
+      const payload = activePayload || {
+        content: activeAnalysis.title + ". " + activeAnalysis.plain_summary,
+        imageBase64: null,
+        imageMimeType: null,
+        taskIntent: "general",
+      };
+
+      setIsLoading(true);
+      try {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: payload.content,
+            imageBase64: payload.imageBase64,
+            imageMimeType: payload.imageMimeType,
+            language: newLang,
+            taskIntent: payload.taskIntent,
+          }),
+        });
+
+        const resData = await response.json();
+        if (response.ok && resData.data) {
+          setActiveAnalysis(resData.data);
+          setCurrentStepIdx(0);
+        }
+      } catch (err) {
+        console.error("Language re-analysis error:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
   const clearFeed = () => {
     localStorage.removeItem("sahara_feed");
     setFeedItems([]);
+  };
+
+  const shareOnWhatsApp = (text: string) => {
+    if (!text) return;
+    const encoded = encodeURIComponent(text);
+
+    // Detect mobile device vs desktop browser
+    const isMobile =
+      typeof navigator !== "undefined" &&
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
+
+    // Desktop: Opens web.whatsapp.com directly (bypasses intermediate landing page)
+    // Mobile: Opens native WhatsApp mobile app
+    const url = isMobile
+      ? `https://api.whatsapp.com/send?text=${encoded}`
+      : `https://web.whatsapp.com/send?text=${encoded}`;
+
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const fontClasses = {
@@ -151,6 +231,7 @@ export default function SaharaLiveApp() {
           <button
             onClick={() => {
               setActiveAnalysis(null);
+              setActivePayload(null);
               audioManager.stop();
             }}
             className="flex items-center gap-2 p-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-black min-h-[56px] min-w-[56px] shadow-sm transition"
@@ -198,7 +279,7 @@ export default function SaharaLiveApp() {
               ).map((lang) => (
                 <button
                   key={lang.id}
-                  onClick={() => setLanguage(lang.id)}
+                  onClick={() => handleLanguageChange(lang.id)}
                   className={`min-h-[46px] px-3 py-1.5 font-bold rounded-xl transition ${
                     language === lang.id
                       ? "bg-blue-700 text-white shadow-sm"
@@ -265,10 +346,42 @@ export default function SaharaLiveApp() {
               {/* Task Intent Selector */}
               <div className="flex flex-wrap gap-2">
                 {[
-                  { id: "general", label: "📝 Understand Message" },
-                  { id: "scam_check", label: "🛡️ Scam & Safety Check" },
-                  { id: "bill_payment", label: "⚡ Pay / Check Bill" },
-                  { id: "booking", label: "🚆 Travel / Booking" },
+                  {
+                    id: "general",
+                    label:
+                      language === "hi"
+                        ? "📝 संदेश समझें"
+                        : language === "hinglish"
+                        ? "📝 Message Samjhein"
+                        : "📝 Understand Message",
+                  },
+                  {
+                    id: "scam_check",
+                    label:
+                      language === "hi"
+                        ? "🛡️ फ्रॉड व सुरक्षा जांच"
+                        : language === "hinglish"
+                        ? "🛡️ Scam & Safety Check"
+                        : "🛡️ Scam & Safety Check",
+                  },
+                  {
+                    id: "bill_payment",
+                    label:
+                      language === "hi"
+                        ? "⚡ बिल जांचें / भरें"
+                        : language === "hinglish"
+                        ? "⚡ Bill Pay / Check"
+                        : "⚡ Pay / Check Bill",
+                  },
+                  {
+                    id: "booking",
+                    label:
+                      language === "hi"
+                        ? "🚆 यात्रा / टिकट"
+                        : language === "hinglish"
+                        ? "🚆 Travel / Ticket"
+                        : "🚆 Travel / Booking",
+                  },
                 ].map((intent) => (
                   <button
                     key={intent.id}
@@ -315,7 +428,11 @@ export default function SaharaLiveApp() {
                     className="cursor-pointer min-h-[52px] flex items-center gap-2 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold border border-slate-300 text-sm transition"
                   >
                     <ImageIcon className="w-5 h-5 text-blue-600" />
-                    {selectedImage ? selectedImage.name : "Attach Screenshot / Photo"}
+                    {selectedImage
+                      ? selectedImage.name
+                      : language === "hi"
+                      ? "फोटो या स्क्रीनशॉट जोड़ें"
+                      : "Attach Screenshot / Photo"}
                   </label>
                   {selectedImage && (
                     <button
@@ -325,7 +442,7 @@ export default function SaharaLiveApp() {
                       }}
                       className="text-xs text-red-600 font-bold hover:underline px-2"
                     >
-                      Remove
+                      {language === "hi" ? "हटाएं" : "Remove"}
                     </button>
                   )}
                 </div>
@@ -343,22 +460,30 @@ export default function SaharaLiveApp() {
             {/* DYNAMIC ATTENTION FEED */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900">Your Attention Feed</h2>
+                <h2 className="text-xl font-bold text-slate-900">
+                  {language === "hi" ? "हालिया अलर्ट और संदेश (Attention Feed)" : "Your Attention Feed"}
+                </h2>
                 {feedItems.length > 0 && (
                   <button
                     onClick={clearFeed}
                     className="flex items-center gap-1 text-sm font-bold text-red-600 hover:text-red-800 p-2"
                   >
-                    <Trash2 className="w-4 h-4" /> Clear All
+                    <Trash2 className="w-4 h-4" /> {language === "hi" ? "सब हटाएं" : "Clear All"}
                   </button>
                 )}
               </div>
 
               {feedItems.length === 0 ? (
                 <div className="p-8 bg-white border-2 border-dashed border-slate-300 rounded-3xl text-center text-slate-500">
-                  <p className="font-semibold text-lg">No active messages or alerts yet.</p>
+                  <p className="font-semibold text-lg">
+                    {language === "hi"
+                      ? "अभी कोई सक्रिय संदेश या अलर्ट नहीं है।"
+                      : "No active messages or alerts yet."}
+                  </p>
                   <p className="text-sm mt-1">
-                    Paste a message or attach a screenshot above to run a live analysis.
+                    {language === "hi"
+                      ? "जांच करने के लिए ऊपर कोई संदेश पेस्ट करें या स्क्रीनशॉट जोड़ें।"
+                      : "Paste a message or attach a screenshot above to run a live analysis."}
                   </p>
                 </div>
               ) : (
@@ -371,7 +496,14 @@ export default function SaharaLiveApp() {
                       <div
                         key={item.id}
                         onClick={() => {
+                          audioManager.stop();
                           setActiveAnalysis(item.analysis);
+                          setActivePayload({
+                            content: item.sourceContent || item.analysis.title,
+                            imageBase64: item.imageBase64 || null,
+                            imageMimeType: item.imageMimeType || null,
+                            taskIntent: item.taskIntent || "general",
+                          });
                           setCurrentStepIdx(0);
                         }}
                         className={`cursor-pointer p-5 rounded-2xl border-2 transition shadow-sm flex items-center justify-between gap-4 ${
@@ -417,10 +549,16 @@ export default function SaharaLiveApp() {
                 onClick={() => {
                   audioManager.stop();
                   setActiveAnalysis(null);
+                  setActivePayload(null);
                 }}
                 className="flex items-center gap-2 font-bold px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 min-h-[52px] transition"
               >
-                <ArrowLeft className="w-5 h-5" /> Dashboard
+                <ArrowLeft className="w-5 h-5" />
+                {language === "hi"
+                  ? "मुख्य पृष्ठ (Dashboard)"
+                  : language === "hinglish"
+                  ? "Wapas Dashboard"
+                  : "Dashboard"}
               </button>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -434,10 +572,43 @@ export default function SaharaLiveApp() {
                   onClick={() => setShowShareModal(true)}
                   className="flex items-center gap-2 bg-purple-100 text-purple-900 border border-purple-300 font-bold px-4 py-3 rounded-2xl hover:bg-purple-200 min-h-[52px] transition shadow-sm"
                 >
-                  <Share2 className="w-5 h-5" /> Ask Family
+                  <Share2 className="w-5 h-5" />
+                  {language === "hi" ? "परिवार से सलाह" : language === "hinglish" ? "Ask Family" : "Ask Family"}
                 </button>
               </div>
             </div>
+
+            {/* Extracted Message Card (Displays text read from screenshot/message) */}
+            {activeAnalysis.extracted_message && (
+              <div className="p-5 rounded-3xl bg-slate-50 border-2 border-slate-300 shadow-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                    📄 {language === "hi"
+                      ? "स्क्रीनशॉट या संदेश से पढ़ा गया टेक्स्ट (Extracted Text):"
+                      : language === "hinglish"
+                      ? "Screenshot / Message se padha gaya text:"
+                      : "Extracted Text from Screenshot / Message:"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(activeAnalysis.extracted_message || "");
+                      setCopiedNotification(true);
+                      setTimeout(() => setCopiedNotification(false), 2500);
+                    }}
+                    className="text-xs text-blue-700 hover:underline font-bold flex items-center gap-1 min-h-[32px] px-2 rounded-lg hover:bg-slate-200 transition"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {copiedNotification
+                      ? (language === "hi" ? "कॉपी हुआ!" : "Copied!")
+                      : (language === "hi" ? "टेक्स्ट कॉपी करें" : "Copy Text")}
+                  </button>
+                </div>
+                <div className="p-3.5 bg-white rounded-2xl border border-slate-200 text-slate-800 text-sm md:text-base font-medium whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed">
+                  {activeAnalysis.extracted_message}
+                </div>
+              </div>
+            )}
 
             {/* Safety Rating Card */}
             <div
@@ -457,13 +628,29 @@ export default function SaharaLiveApp() {
                 )}
                 <div>
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                    Safety Evaluation
+                    {language === "hi"
+                      ? "सुरक्षा मूल्यांकन (Safety Evaluation)"
+                      : language === "hinglish"
+                      ? "Safety Evaluation"
+                      : "Safety Evaluation"}
                   </span>
                   <h2 className="text-2xl md:text-3xl font-black">
                     {activeAnalysis.safety_level === "LIKELY_SAFE"
-                      ? "🟢 Looks Normal"
+                      ? language === "hi"
+                        ? "🟢 सब सामान्य लग रहा है"
+                        : language === "hinglish"
+                        ? "🟢 Normal Lag Raha Hai"
+                        : "🟢 Looks Normal"
                       : activeAnalysis.safety_level === "BE_CAREFUL"
-                      ? "🟡 Be Careful"
+                      ? language === "hi"
+                        ? "🟡 सावधानी बरतें"
+                        : language === "hinglish"
+                        ? "🟡 Dhyan Se Dekhein (Be Careful)"
+                        : "🟡 Be Careful"
+                      : language === "hi"
+                      ? "🔴 संभावित जोखिम / सतर्क रहें"
+                      : language === "hinglish"
+                      ? "🔴 Risky / Suspicious Alert"
                       : "🔴 Potentially Risky"}
                   </h2>
                 </div>
@@ -476,7 +663,11 @@ export default function SaharaLiveApp() {
               <div className="bg-white p-6 rounded-3xl border-2 border-red-200 shadow-sm">
                 <h3 className="font-bold text-lg text-red-900 mb-3 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                  Why caution is recommended:
+                  {language === "hi"
+                    ? "सावधानी क्यों जरूरी है (कारण):"
+                    : language === "hinglish"
+                    ? "Savdhani kyu zaroori hai (Reasons):"
+                    : "Why caution is recommended:"}
                 </h3>
                 <ul className="list-disc list-inside space-y-2 text-slate-800 font-medium">
                   {activeAnalysis.suspicion_reasons.map((reason, i) => (
@@ -489,7 +680,13 @@ export default function SaharaLiveApp() {
             {/* Actions: DO vs DO NOT */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-emerald-50 p-6 rounded-3xl border-2 border-emerald-300 shadow-sm">
-                <h3 className="font-bold text-lg text-emerald-950 mb-3">✅ What You Should Do:</h3>
+                <h3 className="font-bold text-lg text-emerald-950 mb-3">
+                  {language === "hi"
+                    ? "✅ आपको क्या करना चाहिए:"
+                    : language === "hinglish"
+                    ? "✅ Aapko kya karna chahiye:"
+                    : "✅ What You Should Do:"}
+                </h3>
                 <ul className="space-y-2 text-slate-800 font-medium">
                   {activeAnalysis.what_to_do.map((act, i) => (
                     <li key={i} className="flex items-start gap-2">
@@ -501,7 +698,13 @@ export default function SaharaLiveApp() {
               </div>
 
               <div className="bg-red-50 p-6 rounded-3xl border-2 border-red-300 shadow-sm">
-                <h3 className="font-bold text-lg text-red-950 mb-3">❌ What You Should NOT Do:</h3>
+                <h3 className="font-bold text-lg text-red-950 mb-3">
+                  {language === "hi"
+                    ? "❌ आपको क्या नहीं करना चाहिए:"
+                    : language === "hinglish"
+                    ? "❌ Aapko kya NAHI karna chahiye:"
+                    : "❌ What You Should NOT Do:"}
+                </h3>
                 <ul className="space-y-2 text-slate-800 font-medium">
                   {activeAnalysis.what_not_to_do.map((dont, i) => (
                     <li key={i} className="flex items-start gap-2">
@@ -514,49 +717,120 @@ export default function SaharaLiveApp() {
             </div>
 
             {/* Step-by-Step Task Guide */}
-            {activeAnalysis.task_steps && activeAnalysis.task_steps.length > 0 && (
-              <div className="bg-white p-6 rounded-3xl border-2 border-blue-300 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-xl text-blue-950">Guided Steps</h3>
-                  <span className="text-sm font-bold bg-blue-100 text-blue-900 px-3 py-1 rounded-full">
-                    Step {currentStepIdx + 1} of {activeAnalysis.task_steps.length}
-                  </span>
-                </div>
+            {activeAnalysis.task_steps && activeAnalysis.task_steps.length > 0 && (() => {
+              const currentStep = activeAnalysis.task_steps[currentStepIdx];
+              const isFamilyShareStep =
+                Boolean(activeAnalysis.family_share_text) &&
+                (currentStepIdx === activeAnalysis.task_steps.length - 1 ||
+                  /परिवार|रिश्तेदार|बेटे|बेटी|family|share|whatsapp|forward|सलाह|बटन/i.test(
+                    currentStep?.instruction || ""
+                  ) ||
+                  /परिवार|family|whatsapp/i.test(currentStep?.check_label || ""));
 
-                <div className="p-5 bg-slate-50 border-2 border-slate-300 rounded-2xl">
-                  <p className="text-xl font-bold text-slate-900">
-                    {activeAnalysis.task_steps[currentStepIdx]?.instruction}
-                  </p>
-                </div>
+              return (
+                <div className="bg-white p-6 rounded-3xl border-2 border-blue-300 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-xl text-blue-950">
+                      {language === "hi"
+                        ? "निर्देशित कदम (Guided Steps)"
+                        : language === "hinglish"
+                        ? "Guided Steps"
+                        : "Guided Steps"}
+                    </h3>
+                    <span className="text-sm font-bold bg-blue-100 text-blue-900 px-3 py-1 rounded-full">
+                      {language === "hi"
+                        ? `चरण ${currentStepIdx + 1} / ${activeAnalysis.task_steps.length}`
+                        : `Step ${currentStepIdx + 1} of ${activeAnalysis.task_steps.length}`}
+                    </span>
+                  </div>
 
-                <div className="flex items-center justify-between gap-3">
-                  <button
-                    disabled={currentStepIdx === 0}
-                    onClick={() => setCurrentStepIdx((p) => Math.max(0, p - 1))}
-                    className="min-h-[52px] px-5 py-2.5 rounded-xl border-2 border-slate-300 font-bold disabled:opacity-30 transition"
-                  >
-                    Previous
-                  </button>
+                  <div className="p-5 bg-slate-50 border-2 border-slate-300 rounded-2xl space-y-4">
+                    <p className="text-xl font-bold text-slate-900">
+                      {currentStep?.instruction}
+                    </p>
 
-                  {currentStepIdx < activeAnalysis.task_steps.length - 1 ? (
+                    {/* INLINE 1-CLICK WHATSAPP SHARE BUTTON FOR SENIORS */}
+                    {isFamilyShareStep && activeAnalysis.family_share_text && (
+                      <div className="pt-2 space-y-2 border-t border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => shareOnWhatsApp(activeAnalysis.family_share_text)}
+                          className="w-full min-h-[58px] px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-lg rounded-2xl flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition cursor-pointer"
+                        >
+                          <MessageCircle className="w-6 h-6 fill-white" />
+                          <span>
+                            {language === "hi"
+                              ? "📲 परिवार को WhatsApp पर भेजें"
+                              : language === "hinglish"
+                              ? "📲 Family ko WhatsApp par bhejo"
+                              : "📲 Send Alert to Family on WhatsApp"}
+                          </span>
+                        </button>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-slate-600 font-semibold">
+                          <span>
+                            {language === "hi"
+                              ? "व्हाट्सएप खुलने पर अपने बेटे, बेटी या रिश्तेदार को चुनें"
+                              : language === "hinglish"
+                              ? "WhatsApp khulne par family member select karein"
+                              : "Select your family member when WhatsApp opens"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(activeAnalysis.family_share_text);
+                              setCopiedNotification(true);
+                              setTimeout(() => setCopiedNotification(false), 2500);
+                            }}
+                            className="text-blue-700 hover:underline font-bold"
+                          >
+                            {copiedNotification
+                              ? (language === "hi" ? "✓ कॉपी हो गया!" : "✓ Copied!")
+                              : (language === "hi" ? "📋 टेक्स्ट कॉपी करें" : "📋 Copy Text")}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
                     <button
-                      onClick={() => setCurrentStepIdx((p) => p + 1)}
-                      className="min-h-[52px] px-6 py-3 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl flex items-center gap-2 shadow-sm transition"
+                      disabled={currentStepIdx === 0}
+                      onClick={() => setCurrentStepIdx((p) => Math.max(0, p - 1))}
+                      className="min-h-[52px] px-5 py-2.5 rounded-xl border-2 border-slate-300 font-bold disabled:opacity-30 transition"
                     >
-                      {activeAnalysis.task_steps[currentStepIdx]?.check_label || "Completed Step"}
-                      <ArrowRight className="w-5 h-5" />
+                      {language === "hi" ? "पिछला (Previous)" : "Previous"}
                     </button>
-                  ) : (
-                    <button
-                      onClick={() => alert("Task complete! You have completed all safety steps.")}
-                      className="min-h-[52px] px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl flex items-center gap-2 shadow-sm transition"
-                    >
-                      <CheckCircle2 className="w-5 h-5" /> Finished Safely
-                    </button>
-                  )}
+
+                    {currentStepIdx < activeAnalysis.task_steps.length - 1 ? (
+                      <button
+                        onClick={() => setCurrentStepIdx((p) => p + 1)}
+                        className="min-h-[52px] px-6 py-3 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl flex items-center gap-2 shadow-sm transition"
+                      >
+                        {currentStep?.check_label || "Completed Step"}
+                        <ArrowRight className="w-5 h-5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() =>
+                          alert(
+                            language === "hi"
+                              ? "कार्य पूर्ण! आपने सभी सुरक्षा निर्देश पूरे कर लिए हैं।"
+                              : language === "hinglish"
+                              ? "Kaam complete! Aapne saare safety steps follow kar liye."
+                              : "Task complete! You have completed all safety steps."
+                          )
+                        }
+                        className="min-h-[52px] px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl flex items-center gap-2 shadow-sm transition"
+                      >
+                        <CheckCircle2 className="w-5 h-5" />{" "}
+                        {language === "hi" ? "सुरक्षित संपन्न (Finished)" : "Finished Safely"}
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
@@ -568,41 +842,71 @@ export default function SaharaLiveApp() {
             aria-labelledby="family-help-title"
             className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
           >
-            <div className="bg-white max-w-lg w-full rounded-3xl p-6 border-2 border-slate-300 shadow-2xl">
-              <h3 id="family-help-title" className="font-bold text-2xl text-slate-900 mb-2">
-                Ask Family for Help
-              </h3>
-              <p className="text-slate-600 mb-4 text-sm font-medium">
-                Send this message to your family or trusted contacts for advice:
-              </p>
+            <div className="bg-white max-w-lg w-full rounded-3xl p-6 border-2 border-slate-300 shadow-2xl space-y-4">
+              <div>
+                <h3 id="family-help-title" className="font-bold text-2xl text-slate-900 mb-1">
+                  {language === "hi"
+                    ? "परिवार से सलाह लें"
+                    : language === "hinglish"
+                    ? "Family se Salah Lein"
+                    : "Ask Family for Help"}
+                </h3>
+                <p className="text-slate-600 text-sm font-medium">
+                  {language === "hi"
+                    ? "यह संदेश सीधे व्हाट्सएप पर भेजें या कॉपी करके किसी भी ऐप में भेजें:"
+                    : language === "hinglish"
+                    ? "Yeh message seedhe WhatsApp par bhejein ya copy karein:"
+                    : "Send this message to your family or trusted contacts for advice:"}
+                </p>
+              </div>
 
-              <div className="p-4 bg-slate-100 rounded-2xl border border-slate-300 text-slate-900 font-medium mb-4 whitespace-pre-wrap text-sm max-h-60 overflow-y-auto">
+              <div className="p-4 bg-slate-100 rounded-2xl border border-slate-300 text-slate-900 font-medium whitespace-pre-wrap text-sm max-h-60 overflow-y-auto">
                 {activeAnalysis.family_share_text}
               </div>
 
               {copiedNotification && (
-                <p className="text-emerald-700 font-bold text-center mb-2 text-sm">
-                  ✓ Copied to clipboard!
+                <p className="text-emerald-700 font-bold text-center text-sm">
+                  ✓ {language === "hi" ? "क्लिपबोर्ड पर कॉपी किया गया!" : "Copied to clipboard!"}
                 </p>
               )}
 
-              <div className="flex gap-2">
+              <div className="space-y-2.5">
+                {/* 1-Click WhatsApp Button */}
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(activeAnalysis.family_share_text);
-                    setCopiedNotification(true);
-                    setTimeout(() => setCopiedNotification(false), 2500);
-                  }}
-                  className="flex-1 min-h-[52px] py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition"
+                  type="button"
+                  onClick={() => shareOnWhatsApp(activeAnalysis.family_share_text)}
+                  className="w-full min-h-[54px] py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-lg rounded-2xl flex items-center justify-center gap-3 shadow-md transition cursor-pointer"
                 >
-                  <Copy className="w-4 h-4" /> Copy Message
+                  <MessageCircle className="w-6 h-6 fill-white" />
+                  <span>
+                    {language === "hi"
+                      ? "📲 WhatsApp पर भेजें"
+                      : language === "hinglish"
+                      ? "📲 WhatsApp par Bhejein"
+                      : "📲 Send on WhatsApp"}
+                  </span>
                 </button>
-                <button
-                  onClick={() => setShowShareModal(false)}
-                  className="min-h-[52px] px-5 py-3 border-2 border-slate-300 font-bold rounded-xl hover:bg-slate-100 text-sm transition"
-                >
-                  Close
-                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(activeAnalysis.family_share_text);
+                      setCopiedNotification(true);
+                      setTimeout(() => setCopiedNotification(false), 2500);
+                    }}
+                    className="flex-1 min-h-[50px] py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition"
+                  >
+                    <Copy className="w-4 h-4" /> {language === "hi" ? "संदेश कॉपी करें" : "Copy Message"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowShareModal(false)}
+                    className="min-h-[50px] px-6 py-2.5 border-2 border-slate-300 font-bold rounded-xl hover:bg-slate-100 text-sm transition"
+                  >
+                    {language === "hi" ? "बंद करें" : "Close"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
