@@ -19,7 +19,19 @@ const SENSITIVE_PATTERNS: { type: string; regex: RegExp }[] = [
   { type: "Card CVV", regex: /\b(?:cvv|cvc|security code)\s*[:=]?\s*(\d{3,4})\b/gi },
   { type: "Indian PAN", regex: /\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b/g },
   { type: "Indian Aadhaar", regex: /\b\d{4}\s\d{4}\s\d{4}\b/g },
+  // Indian UPI ID (VPA)
+  {
+    type: "Indian UPI ID",
+    regex: /\b[a-zA-Z0-9.\-_]{2,64}@(okaxis|okhdfcbank|okicici|oksbi|paytm|ybl|ibl|upi|axl|apl|barodampay|federal|idfcbank|kotak|postbank|sbi|hdfcbank|icici|axisbank)\b/gi,
+  },
+  // Indian Bank IFSC Code (4 letters, 0, 6 alphanumeric)
+  { type: "Indian IFSC Code", regex: /\b[A-Z]{4}0[A-Z0-9]{6}\b/g },
   { type: "Plain Password Token", regex: /(?:password|pin|passcode)\s*[:=]?\s*([^\s,]+)/gi },
+  // Adversarial Prompt Injection Patterns
+  {
+    type: "Prompt Injection",
+    regex: /\b(?:ignore|disregard|forget|override)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|directives|prompts|rules)\b|\bsystem\s+prompt\s+override\b|\byou\s+are\s+now\s+in\s+developer\s+mode\b|\bbypass\s+all\s+safety\s+(?:filters|rules|checks)\b/gi,
+  },
 ];
 
 export function sanitizeInputText(raw: string): SanitizationResult {
@@ -43,12 +55,25 @@ export function sanitizeInputText(raw: string): SanitizationResult {
   };
 }
 
+export function detectPromptInjection(text: string): { isAdversarial: boolean; matchedSnippet?: string } {
+  const injectionRegex = /\b(?:ignore|disregard|forget|override)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|directives|prompts|rules)\b|\bsystem\s+prompt\s+override\b|\byou\s+are\s+now\s+in\s+developer\s+mode\b|\bbypass\s+all\s+safety\s+(?:filters|rules|checks)\b/i;
+  const match = text.match(injectionRegex);
+  return {
+    isAdversarial: !!match,
+    matchedSnippet: match ? match[0] : undefined,
+  };
+}
+
 const FORBIDDEN_OUTPUT_PATTERNS = [
   /share\s+(your\s+)?otp/i,
+  /tell\s+(the\s+caller\s+)?(your\s+)?otp/i,
+  /disclose\s+(your\s+)?otp/i,
   /send\s+(your\s+)?password/i,
   /share\s+(your\s+)?pin/i,
   /share\s+(your\s+)?cvv/i,
   /give\s+(your\s+)?card\s+number/i,
+  /enter\s+(your\s+)?upi\s*pin\s+to\s+receive/i,
+  /download\s+(anydesk|teamviewer|rustdesk|quicksupport)/i,
 ];
 
 export function validateLLMOutputSafety(outputJson: any): boolean {

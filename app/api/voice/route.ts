@@ -1,22 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SAHARA_VOICE_PROFILES, SupportedLang, VoiceGender } from "@/lib/voice-config";
+import {
+  SAHARA_VOICE_PROFILES,
+  EDGE_VOICE_MAP,
+  SupportedLang,
+  VoiceGender,
+  cleanTextForSpeech,
+  getEdgeRateString,
+} from "@/lib/voice-config";
 
 const GOOGLE_TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
-
-const EDGE_VOICE_MAP: Record<SupportedLang, Record<VoiceGender, string>> = {
-  hi: {
-    male: "hi-IN-MadhurNeural",
-    female: "hi-IN-SwaraNeural",
-  },
-  hinglish: {
-    male: "en-IN-PrabhatNeural",
-    female: "en-IN-NeerjaNeural",
-  },
-  en: {
-    male: "en-IN-PrabhatNeural",
-    female: "en-IN-NeerjaNeural",
-  },
-};
 
 async function synthesizeWithEdge(text: string, voiceName: string, rate: string = "-10%"): Promise<string> {
   const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
@@ -35,16 +27,6 @@ async function synthesizeWithEdge(text: string, voiceName: string, rate: string 
   });
 }
 
-function cleanTextForSpeech(text: string): string {
-  if (!text) return "";
-  return text
-    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, "")
-    .replace(/[🛡⚡🚆📝✅❌🟢🟡🔴⚠️🙏👋📌📞🔍]/g, "")
-    .replace(/^[\s\-–—:.,]+/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -59,7 +41,7 @@ export async function POST(req: NextRequest) {
     const targetLang: SupportedLang = ["hi", "en", "hinglish"].includes(language) ? language : "hi";
     const targetGender: VoiceGender = gender === "male" ? "male" : "female";
     const parsedSpeed = speed === 0.75 ? 0.75 : speed === 1.0 ? 1.0 : 0.9;
-    const edgeRate = parsedSpeed === 0.75 ? "-25%" : parsedSpeed === 1.0 ? "+0%" : "-10%";
+    const edgeRate = getEdgeRateString(parsedSpeed);
 
     const apiKey = process.env.GOOGLE_CLOUD_TTS_API_KEY || process.env.GEMINI_API_KEY;
 
