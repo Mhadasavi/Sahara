@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Volume2, VolumeX, Loader2 } from "lucide-react";
 import { audioManager } from "@/lib/audio-client";
 import { SupportedLang, VoiceGender } from "@/lib/voice-config";
+import { SpeechSpeed } from "@/lib/types";
 
 interface VoicePlayerProps {
   textToSpeak: string;
@@ -14,6 +15,7 @@ export default function SaharaVoicePlayer({ textToSpeak, language }: VoicePlayer
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
+  const [speed, setSpeed] = useState<SpeechSpeed>(0.9);
 
   // When unmounting or when language/text changes, stop any ongoing audio
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function SaharaVoicePlayer({ textToSpeak, language }: VoicePlayer
       audioManager.stop();
       setIsPlaying(false);
     } else {
-      audioManager.playNaturalVoice(textToSpeak, language, voiceGender, (playing, loading) => {
+      audioManager.playNaturalVoice(textToSpeak, language, voiceGender, speed, (playing, loading) => {
         setIsPlaying(playing);
         setIsLoading(loading);
       });
@@ -39,7 +41,19 @@ export default function SaharaVoicePlayer({ textToSpeak, language }: VoicePlayer
     setVoiceGender(newGender);
     if (isPlaying) {
       audioManager.stop();
-      audioManager.playNaturalVoice(textToSpeak, language, newGender, (playing, loading) => {
+      audioManager.playNaturalVoice(textToSpeak, language, newGender, speed, (playing, loading) => {
+        setIsPlaying(playing);
+        setIsLoading(loading);
+      });
+    }
+  };
+
+  const handleSpeedChange = (newSpeed: SpeechSpeed) => {
+    if (speed === newSpeed) return;
+    setSpeed(newSpeed);
+    if (isPlaying) {
+      audioManager.stop();
+      audioManager.playNaturalVoice(textToSpeak, language, voiceGender, newSpeed, (playing, loading) => {
         setIsPlaying(playing);
         setIsLoading(loading);
       });
@@ -108,6 +122,50 @@ export default function SaharaVoicePlayer({ textToSpeak, language }: VoicePlayer
           }`}
         >
           👨 Bhaiya / Male
+        </button>
+      </div>
+
+      {/* Voice Speed Toggle */}
+      <div
+        className="flex bg-slate-100 rounded-xl p-1 border border-slate-300"
+        role="group"
+        aria-label="Speech Speed"
+      >
+        <button
+          type="button"
+          onClick={() => handleSpeedChange(0.75)}
+          className={`min-h-[44px] px-2.5 py-1.5 text-xs md:text-sm font-bold rounded-lg transition ${
+            speed === 0.75
+              ? "bg-white text-blue-900 shadow-sm border border-slate-200"
+              : "text-slate-600 hover:bg-slate-200"
+          }`}
+          title={language === "hi" ? "धीमी व स्पष्ट गति" : "Slow & Clear"}
+        >
+          🐢 0.75x
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSpeedChange(0.9)}
+          className={`min-h-[44px] px-2.5 py-1.5 text-xs md:text-sm font-bold rounded-lg transition ${
+            speed === 0.9
+              ? "bg-white text-blue-900 shadow-sm border border-slate-200"
+              : "text-slate-600 hover:bg-slate-200"
+          }`}
+          title={language === "hi" ? "सहज गति" : "Gentle Cadence"}
+        >
+          🚶 0.9x
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSpeedChange(1.0)}
+          className={`min-h-[44px] px-2.5 py-1.5 text-xs md:text-sm font-bold rounded-lg transition ${
+            speed === 1.0
+              ? "bg-white text-blue-900 shadow-sm border border-slate-200"
+              : "text-slate-600 hover:bg-slate-200"
+          }`}
+          title={language === "hi" ? "सामान्य गति" : "Normal"}
+        >
+          🏃 1.0x
         </button>
       </div>
     </div>

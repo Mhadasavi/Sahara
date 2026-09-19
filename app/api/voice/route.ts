@@ -18,11 +18,11 @@ const EDGE_VOICE_MAP: Record<SupportedLang, Record<VoiceGender, string>> = {
   },
 };
 
-async function synthesizeWithEdge(text: string, voiceName: string): Promise<string> {
+async function synthesizeWithEdge(text: string, voiceName: string, rate: string = "-10%"): Promise<string> {
   const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
   const tts = new MsEdgeTTS();
   await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-  const { audioStream } = tts.toStream(text, { rate: -10 }); // 10% slower cadence for senior clarity
+  const { audioStream } = tts.toStream(text, { rate });
   
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -48,7 +48,7 @@ function cleanTextForSpeech(text: string): string {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { text, language = "hi", gender = "female" } = body;
+    const { text, language = "hi", gender = "female", speed = 0.9 } = body;
 
     if (!text || typeof text !== "string" || text.trim().length === 0) {
       return NextResponse.json({ error: "Text string is required for speech synthesis." }, { status: 400 });
@@ -58,6 +58,8 @@ export async function POST(req: NextRequest) {
     const sanitizedText = cleanTextForSpeech(text).substring(0, 800);
     const targetLang: SupportedLang = ["hi", "en", "hinglish"].includes(language) ? language : "hi";
     const targetGender: VoiceGender = gender === "male" ? "male" : "female";
+    const parsedSpeed = speed === 0.75 ? 0.75 : speed === 1.0 ? 1.0 : 0.9;
+    const edgeRate = parsedSpeed === 0.75 ? "-25%" : parsedSpeed === 1.0 ? "+0%" : "-10%";
 
     const apiKey = process.env.GOOGLE_CLOUD_TTS_API_KEY || process.env.GEMINI_API_KEY;
 
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest) {
           },
           audioConfig: {
             audioEncoding: "MP3",
-            speakingRate: 0.9,
+            speakingRate: parsedSpeed,
             pitch: targetGender === "male" ? -2.0 : 0.0,
           },
         };
@@ -101,7 +103,7 @@ export async function POST(req: NextRequest) {
 
     // 2. High-Fidelity Natural Voice Engine (Madhur for Indian Hindi Male, Swara for Hindi Female)
     const edgeVoice = EDGE_VOICE_MAP[targetLang][targetGender];
-    const base64Audio = await synthesizeWithEdge(sanitizedText, edgeVoice);
+    const base64Audio = await synthesizeWithEdge(sanitizedText, edgeVoice, edgeRate);
 
     return NextResponse.json({
       audioContent: base64Audio,

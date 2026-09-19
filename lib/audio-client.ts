@@ -1,4 +1,5 @@
 import { SupportedLang, VoiceGender } from "./voice-config";
+import { SpeechSpeed } from "./types";
 
 export function cleanTextForSpeech(text: string): string {
   if (!text) return "";
@@ -28,12 +29,13 @@ class SaharaAudioManager {
     text: string,
     language: SupportedLang,
     gender: VoiceGender = "female",
+    speed: SpeechSpeed = 0.9,
     onStateChange?: (isPlaying: boolean, isLoading: boolean) => void
   ): Promise<void> {
     this.stop();
 
     const spokenText = cleanTextForSpeech(text);
-    const cacheKey = `${language}_${gender}_${spokenText}`;
+    const cacheKey = `${language}_${gender}_${speed}_${spokenText}`;
 
     // Step 1: Check memory cache to avoid redundant API calls
     if (this.audioCache.has(cacheKey)) {
@@ -48,7 +50,7 @@ class SaharaAudioManager {
       const res = await fetch("/api/voice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: spokenText, language, gender }),
+        body: JSON.stringify({ text: spokenText, language, gender, speed }),
       });
 
       if (!res.ok) throw new Error("API voice generation unsuccessful");
@@ -62,8 +64,19 @@ class SaharaAudioManager {
     } catch (err) {
       console.warn("Natural voice API unavailable. Engaging native browser speech fallback.", err);
       onStateChange?.(false, false);
-      this.playBrowserFallback(text, language, gender, onStateChange);
+      this.playBrowserFallback(text, language, gender, speed, onStateChange);
     }
+  }
+
+  public async playText(
+    text: string,
+    language: SupportedLang,
+    gender: VoiceGender = "male",
+    speed: SpeechSpeed = 0.9,
+    onStateChange?: (isPlaying: boolean, isLoading: boolean) => void
+  ): Promise<void> {
+    const validSpeed: SpeechSpeed = speed === 0.75 ? 0.75 : speed === 1.0 ? 1.0 : 0.9;
+    return this.playNaturalVoice(text, language, gender, validSpeed, onStateChange);
   }
 
   private playBase64(
@@ -163,6 +176,7 @@ class SaharaAudioManager {
     text: string,
     language: SupportedLang,
     gender: VoiceGender = "female",
+    speed: SpeechSpeed = 0.9,
     onStateChange?: (isPlaying: boolean, isLoading: boolean) => void
   ) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -189,12 +203,13 @@ class SaharaAudioManager {
     }
 
     // Explicit pitch differential guarantees distinct gender tone even on single-voice machines
+    const speedRatio = speed / 0.9;
     if (gender === "male") {
       utterance.pitch = 0.80; // Deep, calm masculine cadence (Bhaiya)
-      utterance.rate = 0.85;
+      utterance.rate = Math.max(0.6, Math.min(1.2, 0.85 * speedRatio));
     } else {
       utterance.pitch = 1.15; // Bright, gentle feminine cadence (Didi)
-      utterance.rate = 0.88;
+      utterance.rate = Math.max(0.6, Math.min(1.2, 0.88 * speedRatio));
     }
 
     this.isSpeakingSpeechSynth = true;
