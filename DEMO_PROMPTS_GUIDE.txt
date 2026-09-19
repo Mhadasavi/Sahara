@@ -1,0 +1,91 @@
+================================================================================
+SAHARA – Hackathon Demo & Testing Prompts Guide
+Ready-to-use sample messages for testing and judge evaluation
+================================================================================
+
+HOW TO USE:
+1. Open http://localhost:3000 in your browser.
+2. Copy any of the test prompts below.
+3. Paste into Sahara's input box.
+4. (Optional) Notice how confidential OTPs, PAN cards, or Card numbers are
+   automatically masked locally before anything is analyzed.
+5. Click "Analyze Now" (or "जांचें").
+6. Click "सुनें (Listen)" to hear natural voice audio readout (or toggle between Didi and Bhaiya).
+7. Test the font scaler (A, A+, A++) and language switcher (EN, हिंदी, Hinglish).
+8. Step through the Guided Steps and click "Ask Family" to see the pre-drafted WhatsApp message.
+
+--------------------------------------------------------------------------------
+SCENARIO 1: Suspicious Electricity Disconnection Threat (Urgent Scam Heuristic)
+--------------------------------------------------------------------------------
+Language to select: English or Hinglish
+Intent: 🛡️ Scam & Safety Check
+
+Sample Prompt to Copy:
+"Dear Consumer, your electricity power connection will be disconnected tonight at 9:30 PM from the electricity office because your previous month bill was not updated. Please immediately call our electricity officer at 9812345678 to update your bill and avoid blackout."
+
+What to observe:
+- Triage: IMPORTANT
+- Safety Rating: 🔴 Potentially Risky
+- Sahara clearly explains the red flags (threats of disconnection without formal notice, personal mobile number instead of official portal).
+- Clear DO / DO NOT directives.
+
+
+--------------------------------------------------------------------------------
+SCENARIO 2: Urgent Bank KYC Expiry with Sensitive OTP (Tests PII Redaction)
+--------------------------------------------------------------------------------
+Language to select: English
+Intent: 🛡️ Scam & Safety Check
+
+Sample Prompt to Copy:
+"Dear SBI customer, your SBI YONO account has been suspended due to pending KYC update. Please verify PAN card ABCDE1234F and use verification OTP is 482910 to reactivate your debit card 4532-8912-3456-9812 at http://sbi-kyc-update-verify.com immediately."
+
+What to observe:
+- Client-side / edge regex automatically intercepts and masks the OTP, PAN card, and Card number.
+- Warning banner appears: "Security Notice: Confidential Data Masked (OTP Code, Indian PAN, Credit/Debit Card)".
+- Sahara warns against entering any credentials or clicking external links.
+
+
+--------------------------------------------------------------------------------
+SCENARIO 3: Hindi Power Disconnection Notice (Hindi Voice Test)
+--------------------------------------------------------------------------------
+Language to select: हिंदी
+Intent: ⚡ Pay / Check Bill
+
+Sample Prompt to Copy:
+"प्रिय उपभोक्ता, आपका बिजली कनेक्शन आज रात 9:30 बजे काट दिया जाएगा क्योंकि पिछले महीने का बिल अपडेट नहीं हुआ है। तुरंत बिजली अधिकारी से 9876543210 पर संपर्क करें।"
+
+What to observe:
+- Entire UI and analysis renders in simple, respectful Hindi (Devanagari).
+- Click "सुनें (Listen)" to hear the natural Hindi voice (Chirp 3 HD / hi-IN).
+- Toggle between "👩 Didi" and "👨 Bhaiya" for voice preference.
+- Stepper buttons render in Hindi ("मैंने समझ लिया", "पूर्ण हुआ").
+
+
+--------------------------------------------------------------------------------
+SCENARIO 4: Safe IRCTC Railway Booking Confirmation (Legitimate Message)
+--------------------------------------------------------------------------------
+Language to select: English or Hinglish
+Intent: 🚆 Travel / Booking
+
+Sample Prompt to Copy:
+"PNR: 2849102938, Train 12951 NDLS TEJAS RAJ, Date: 24-Sep-2026, Sleeper: B3-42 (Confirmed). Total Fare: Rs. 1420. Have a safe journey. - IRCTC"
+
+What to observe:
+- Triage: CAUGHT_UP
+- Safety Rating: 🟢 Looks Normal
+- Reassures the senior that no action is required and confirms ticket details.
+
+
+--------------------------------------------------------------------------------
+SCENARIO 5: Hinglish Pension / Life Certificate Scam
+--------------------------------------------------------------------------------
+Language to select: Hinglish
+Intent: 📝 Understand Message
+
+Sample Prompt to Copy:
+"Pensioner Alert: Aapka Jeevan Pramaan Patra expire ho gaya hai. Pension stop hone se bachane ke liye turant link http://pension-verify-gov.in par click karein aur apna Aadhaar number 4321 8765 1234 verify karein."
+
+What to observe:
+- Aadhaar number is masked as [REDACTED_INDIAN_AADHAAR].
+- Output renders in friendly, conversational Hinglish (Roman script).
+- Prepares an "Ask Family" message in Hinglish ready to copy to WhatsApp.
